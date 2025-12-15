@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+
+# Colab / Jupyter
+.ipynb_checkpoints/
+
+# Data files
+*.csv
+
+# Model artifacts
+*.pkl
+*.npy
+*.model
+
+# Bandit / runtime state
+bandit_state.pkl
+
+# Training outputs
+xgb_*.json
+xgb_*.npy
+xgb_*.pkl
+lgbm_*.pkl
+
+# OS junk
+.DS_Store
