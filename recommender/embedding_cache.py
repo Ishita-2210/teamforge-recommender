@@ -4,7 +4,7 @@ import numpy as np
 from sklearn.preprocessing import normalize
 from sklearn.metrics.pairwise import cosine_similarity
 
-BASE = os.path.dirname(os.path.dirname(__file__)) if os.path.basename(os.path.dirname(__file__))=="recommender" else "/content/drive/MyDrive/teamforge"
+from config import BASE
 USER_EMB_PATH = os.path.join(BASE, "user_embs.npy")
 USER_IDS_PATH = os.path.join(BASE, "user_ids.npy")
 TEAM_EMB_PATH = os.path.join(BASE, "team_embs.npy")

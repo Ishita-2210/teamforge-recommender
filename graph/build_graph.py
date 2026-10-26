@@ -21,7 +21,7 @@ def build_user_graph(users_df, user_skills_df, participation_df, events_df=None)
     team_col = "profile_id" if "profile_id" in participation_df.columns else "user_id"
     grouped = participation_df.groupby("team_id")[team_col].apply(list)
     for members in grouped:
-        members = [int(m) for m in members]
+        members = sorted({int(m) for m in members})
         for i in range(len(members)):
             for j in range(i+1, len(members)):
                 u, v = members[i], members[j]
@@ -53,7 +53,7 @@ def build_user_graph(users_df, user_skills_df, participation_df, events_df=None)
                     G.add_edge(u, v, collab=0, skill=weight, domain=0, feedback=0)
 
     # 3) domain/event overlap (optional): if events_df provided
-    if events_df is not None and 'id' in events_df.columns:
+    if events_df is not None and 'event_id' in events_df.columns:
         # build user -> set of domains they participated in (from participation -> events)
         event_map = {}
         for _, ev in events_df.iterrows():

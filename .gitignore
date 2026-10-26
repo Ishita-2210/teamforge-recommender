@@ -24,3 +24,8 @@ lgbm_*.pkl
 
 # OS junk
 .DS_Store
+
+.venv/
+.pytest_cache/
+.env
+*.db

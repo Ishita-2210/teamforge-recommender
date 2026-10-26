@@ -16,7 +16,7 @@ import os
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 
-BASE = "/content/drive/MyDrive/teamforge"
+from config import BASE
 
 _user_graph_embs = None
 _user_graph_ids = None

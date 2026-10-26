@@ -3,7 +3,7 @@ import numpy as np
 import pickle
 import os
 
-BASE = "/content/drive/MyDrive/teamforge"
+from config import BASE
 STATE_PATH = os.path.join(BASE, "bandit_state.pkl")
 
 class ThompsonBandit:

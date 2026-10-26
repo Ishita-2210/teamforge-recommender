@@ -15,6 +15,8 @@ POPULARITY_PENALTY = 0.0005
 
 def rank_candidates(team_id, team_skills_df, team_project_text, users_df, user_skills_df, G,
                     anchor_user=None, impressions_map=None, epsilon=0.05, top_k=50):
+    if top_k < 1:
+        return []
     impressions_map = impressions_map or {}
     candidates = []
 
@@ -44,5 +46,5 @@ def rank_candidates(team_id, team_skills_df, team_project_text, users_df, user_s
     if random.random() < epsilon and len(candidates) > 0:
         sample = candidates[:min(100, len(candidates))]
         pick = random.choice(sample)
-        return [pick] + candidates[:top_k-1]
+        return [pick] + [candidate for candidate in candidates if candidate[0] != pick[0]][:top_k-1]
     return candidates[:top_k]

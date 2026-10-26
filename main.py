@@ -9,7 +9,7 @@ from recommender.rank import rank_candidates
 import teamforge_edgecases as te
 import os
 
-BASE = "/content/drive/MyDrive/teamforge"
+from config import BASE
 
 # load CSVs
 users = pd.read_csv(os.path.join(BASE, "users.csv"))

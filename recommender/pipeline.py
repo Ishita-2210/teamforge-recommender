@@ -1,7 +1,7 @@
 
 import os, sys, json, numpy as np, pandas as pd
-BASE = "/content/drive/MyDrive/teamforge"
-sys.path.append(BASE)
+from config import BASE
+
 
 # safe imports
 try:
@@ -27,7 +27,10 @@ except Exception:
 
 # models & scalers
 import joblib
-import xgboost as xgb
+try:
+    import xgboost as xgb
+except ImportError:
+    xgb = None
 
 conf_path = os.path.join(BASE, "ensemble_conf.json")
 if os.path.exists(conf_path):
@@ -122,6 +125,8 @@ def _minmax_normalize(arr):
     return (a - mn) / (mx - mn)
 
 def recommend(team_id, top_k=20, filter_roles=None, require_skills=None):
+    if not isinstance(top_k, int) or not 1 <= top_k <= 50:
+        raise ValueError("top_k must be an integer from 1 to 50")
     users = pd.read_csv(os.path.join(BASE,"users.csv"))
     user_skills = pd.read_csv(os.path.join(BASE,"user_skills.csv"))
     team_skills = pd.read_csv(os.path.join(BASE,"team_needed_skills.csv"))
@@ -142,13 +147,15 @@ def recommend(team_id, top_k=20, filter_roles=None, require_skills=None):
 
     # candidate pool
     cand = users.copy()
+    if owner is not None:
+        cand = cand[cand['id'] != owner]
     if filter_roles and 'primary_role' in cand.columns:
         cand = cand[cand['primary_role'].isin(filter_roles)]
     if require_skills:
         u_map = user_skills.groupby('user_id')['skill'].apply(set).to_dict()
         keep=[]
         for uid in cand['id'].astype(int).tolist():
-            if any(sk in u_map.get(uid,set()) for sk in require_skills):
+            if all(sk in u_map.get(uid,set()) for sk in require_skills):
                 keep.append(uid)
         cand = cand[cand['id'].isin(keep)]
 
@@ -205,12 +212,23 @@ def recommend(team_id, top_k=20, filter_roles=None, require_skills=None):
     # ensemble weighted sum (weights from config)
     w_x = ENSEMBLE_CONF.get("xgb_weight", 0.45)
     w_l = ENSEMBLE_CONF.get("lgbm_weight", 0.55)
-    final = w_x * xgb_norm + w_l * lgbm_norm
+    if _xgb is None and _lgbm is None:
+        # Missing model files must not silently turn every relevance score into zero.
+        final = 0.5 * feats[:, 0] + 0.3 * feats[:, 1] + 0.2 * feats[:, 2]
+        scoring_mode = "weighted-baseline"
+    else:
+        available_weight = (w_x if _xgb is not None else 0) + (w_l if _lgbm is not None else 0)
+        if available_weight <= 0:
+            raise ValueError("Available rankers need a positive ensemble weight")
+        final = (w_x * xgb_norm + w_l * lgbm_norm) / available_weight
+        scoring_mode = "trained-ranker"
+
 
     out=[]
     for uid, f, xr, lr, skl, sem_v, g_v in zip(user_ids, final, xgb_raw, lgbm_raw, ks, sems, gs):
         out.append({
             "user_id": int(uid),
+            "scoring_mode": scoring_mode,
             "score": float(f),
             "xgb_raw": float(xr),
             "lgbm_raw": float(lr),

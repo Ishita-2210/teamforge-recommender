@@ -1,208 +1,47 @@
-# TeamForge — Hybrid Explainable Recommendation System
+# TeamForge — explainable teammate recommendations
 
-## Overview
+A Python prototype that ranks potential teammates using skill compatibility, cached text similarity and collaboration-graph features. Optional trained XGBoost/LightGBM rankers combine those signals; without model artifacts, an explicitly labelled weighted baseline keeps the core usable.
 
-TeamForge is an intelligent recommendation system designed to match users to teams across collaborative activities such as hackathons, technical projects, sports, arts, and other group-based events.
+## Setup
 
-The system goes beyond simple keyword matching by combining:
+Python 3.11+ in an activated virtual environment:
 
-* structured skill requirements
-* natural language understanding of profiles and project descriptions
-* collaboration/network signals
-* continuous learning from user feedback
-
-The result is a **ranked, explainable, and adaptive recommendation pipeline** suitable for real-world applications.
-
----
-
-## Key Features
-
-* **Hybrid Recommendation Approach**
-
-  * Skill-based filtering (hard constraints)
-  * NLP-based semantic matching for free-text fields
-  * Graph-based collaboration similarity
-  * Learning-to-rank for final ordering
-
-* **Explainability**
-
-  * Every recommendation includes a human-readable explanation
-  * Clear breakdown of contributing signals
-
-* **Online Learning**
-
-  * Learns continuously from user interactions (swipes, accepts, rejects)
-  * Uses time-decayed feedback to adapt to recent behavior
-  * Balances exploration and exploitation
-
-* **Practical Constraints**
-
-  * Prevents duplicate accounts
-  * Prevents double-booking of users
-  * Handles role switching and profile updates
-  * Limits overexposure of popular users
-
----
-
-## High-Level Architecture
-
-```
-Request (Team / Context)
-        ↓
-Candidate Filtering
-  - Skill requirements
-  - Availability checks
-        ↓
-Feature Computation
-  - Skill match score
-  - Semantic similarity score
-  - Graph similarity score
-        ↓
-Learning-to-Rank Model
-        ↓
-Online Bandit Adjustment
-        ↓
-Final Ranked Recommendations
-        ↓
-Explanation Generation
+```sh
+python -m pip install -r requirements.txt
+python -m uvicorn api.main:app --host 127.0.0.1 --port 8000
 ```
 
----
+`GET /health` checks the service. `GET /recommend?team_id=1&top_k=10` requests candidates. `role` filters an exact primary role and comma-separated `skills` requires all listed skills. Invalid IDs return 422; missing CSVs return 503 rather than exposing local paths.
 
-## Recommendation Signals
+Set `TEAMFORGE_DATA_DIR` to your data/artifact directory; the default is the repository root. Google Drive and Colab are not required. Required files are not bundled:
 
-### 1. Skill Matching
+| CSV | Required fields |
+| --- | --- |
+| `users.csv` | `id`; optional `primary_role` |
+| `user_skills.csv` | `user_id`, `skill`, `level` |
+| `team_needed_skills.csv` | `team_id`, `skill`, `min_level`, `priority` |
+| `teams.csv` | `team_id` or `id`; optional `owner_id`, `event_id`/`hackathon_id` |
+| `participation.csv` | `profile_id` or `user_id`, `team_id`; optional `event_id`/`hackathon_id` |
 
-* Users and teams can have multiple skills
-* Skills have levels (Beginner / Intermediate / Pro)
-* Skills can be prioritized by teams
-* Produces a normalized skill compatibility score
+Levels are `Beginner`, `Intermediate`, `Pro`; priorities are `Low`, `Medium`, `High`. The historical `main.py` graph demonstration additionally reads `hackathons.csv` with `event_id` and optional `domain`. It is separate from the HTTP pipeline.
 
-### 2. Semantic Matching (NLP)
+## Ranking and optional artifacts
 
-* Uses sentence embeddings to encode:
+`recommender/skill_match.py` scores weighted requirements. `pipeline.py` excludes the owner and already participating candidates, applies filters, computes the three signals and returns scores with `scoring_mode`. The no-model baseline is `0.5 × skill + 0.3 × semantic + 0.2 × graph`; absent embedding files contribute zero. This fallback is not a trained-model result.
 
-  * user bios
-  * project descriptions
-  * “looking for” text
-* Matches based on meaning rather than keywords
-* Produces a semantic similarity score
+Install `requirements-models.txt` only for model-backed work. The pipeline looks for `xgb_hybrid_tuned.json` or `xgb_hybrid_safe.model`, optional XGBoost scalers, and `lgbm_ranker.pkl` with its optional scaler. Semantic caches use `user_embs.npy`, `user_ids.npy`, `team_embs.npy`, `team_ids.npy`; graph caches use `user_graph_embs.npy`, `user_graph_ids.npy`. Only load trusted pickle/joblib artifacts. Training data, model generation scripts and validated ranking metrics are not supplied.
 
-### 3. Graph-Based Similarity
+`rank.py` is a separate weighted ranker with exposure penalties and optional random exploration. `bandit.py`/`feedback.py` provide persistent feedback utilities; the main ensemble does not currently apply bandit boosts. `explain.py` formats signal explanations, but the API returns signal scores rather than automatically adding explanation text. These distinctions avoid overstating integration.
 
-* Users are modeled as nodes in a collaboration graph
-* Edges represent shared events, teams, or domains
-* Node2Vec embeddings capture collaboration potential
-* Produces a graph similarity score
+## SQLite constraint study
 
-### 4. Learning-to-Rank
+`teamforge_edgecases.py` contains profile versioning, unique users, event participation, spam counters and atomic matching. Set `TEAMFORGE_DB_PATH` for isolated storage; the default is a local ignored database. Connections enforce foreign keys. It is a separate development module and not authentication or production concurrency infrastructure.
 
-* Combines all signals into a single feature vector
-* Trained using historical accept / reject data
-* Outputs a final relevance score for ranking
+## Verify
 
-### 5. Online Learning (Bandits)
-
-* Adjusts rankings based on recent feedback
-* Uses time decay so older interactions matter less
-* Enables controlled exploration of new candidates
-
----
-
-## Explainability
-
-Each recommendation includes an explanation describing why the user was suggested, for example:
-
-* strong skill alignment with team needs
-* similar interests based on profile text
-* high collaboration potential from network history
-* recent positive feedback boost
-
-This improves transparency, trust, and debuggability.
-
----
-
-## Project Structure
-
-```
-teamforge/
-├── api/                    # API layer for backend integration
-├── graph/                  # Graph construction and embeddings
-├── recommender/
-│   ├── pipeline.py         # Main recommendation pipeline
-│   ├── skill_match.py      # Skill compatibility logic
-│   ├── nlp_score.py        # Semantic similarity
-│   ├── graph_embedding.py  # Graph similarity
-│   ├── bandit.py           # Online learning logic
-│   ├── feedback.py         # Feedback ingestion
-│   └── explain.py          # Explanation generation
-├── ensemble_conf.json      # Model configuration
-├── main.py                 # Entry point
-├── teamforge_edgecases.py  # Constraint handling
-└── README.md
+```sh
+python -m pip install pytest httpx
+python -m pytest -q
 ```
 
----
-
-## How to Use (Backend Integration)
-
-The recommendation engine is designed to be used as a service.
-
-### Core Call
-
-```python
-recommend(team_id: int, top_k: int) -> List[Dict]
-```
-
-### Output Format
-
-Each recommended user includes:
-
-```json
-{
-  "user_id": 123,
-  "score": 0.98,
-  "skill_score": 0.25,
-  "semantic_score": 0.21,
-  "graph_sim": 0.96,
-  "explanation": "Why this user was recommended"
-}
-```
-
-The frontend can safely display the explanation directly.
-
----
-
-## Feedback Loop
-
-The system improves over time using feedback signals such as:
-
-* swipe right / swipe left
-* accept / reject
-* successful team formation
-
-Feedback is time-decayed so recent interactions have greater influence.
-
----
-
-## Design Principles
-
-* Modular and extensible
-* Backend-agnostic
-* Explainable by default
-* Realistic constraints modeled explicitly
-* Suitable for production iteration
-
----
-
-## Future Improvements
-
-* Event-specific or domain-specific bandits
-* Diversity-aware ranking constraints
-* FAISS-based candidate retrieval for large-scale usage
-* Redis caching for low-latency serving
-* Offline retraining pipelines
-
----
-
-
+Tests create synthetic CSVs and temporary SQLite databases. They exercise baseline ranking, all-skill filtering, owner exclusion, unique exploration results, event-domain edges, profile updates, foreign keys and HTTP errors. No external dataset or pretrained weight is required. Real-data recommendation quality and optional artifact compatibility remain separate validation tasks.
