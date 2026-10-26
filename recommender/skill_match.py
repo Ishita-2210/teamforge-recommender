@@ -24,9 +24,9 @@ def compute_skill_fit(user_skills_df, team_needed_skills_df):
         weight = pr
         max_possible += weight * 3
         if need['skill'] in user_map:
-            # match quality: 1 if exactly match, more if overshoot
+            # Exact qualification earns 1; each level above/below changes it by 1.
             diff = user_map[need['skill']] - req
-            bonus = 1 + max(0, diff)  # Pro overshoot helpful
+            bonus = 1 + diff
             score += weight * bonus
         else:
             # missing skill: negative scaled by priority

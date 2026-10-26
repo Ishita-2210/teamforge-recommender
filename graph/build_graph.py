@@ -9,17 +9,20 @@ Designed to be safe to call repeatedly.
 """
 import networkx as nx
 from collections import defaultdict
-import math
+from pandas import isna, notna
+from graph.schema import normalize_graph_inputs
 
 def build_user_graph(users_df, user_skills_df, participation_df, events_df=None):
+    user_skills_df, participation_df, events_df = normalize_graph_inputs(
+        user_skills_df, participation_df, events_df
+    )
     G = nx.Graph()
     # add nodes from users
     for uid in users_df['id'].tolist():
         G.add_node(int(uid))
 
     # 1) collaboration edges: users in same team
-    team_col = "profile_id" if "profile_id" in participation_df.columns else "user_id"
-    grouped = participation_df.groupby("team_id")[team_col].apply(list)
+    grouped = participation_df.groupby("team_id")["user_id"].apply(list)
     for members in grouped:
         members = sorted({int(m) for m in members})
         for i in range(len(members)):
@@ -33,15 +36,18 @@ def build_user_graph(users_df, user_skills_df, participation_df, events_df=None)
     # 2) skill overlap edges: count shared skills and consider level weight
     # We assign numeric level: Beginner=1, Intermediate=2, Pro=3
     level_map = {"Beginner":1, "Intermediate":2, "Pro":3}
-    skill_users = defaultdict(list)
+    skill_users = defaultdict(dict)
     for _, r in user_skills_df.iterrows():
         try:
-            skill_users[r['skill']].append((int(r['user_id']), level_map.get(r.get('level','Beginner'),1)))
+            uid = int(r['user_id'])
+            level = level_map.get(r.get('level','Beginner'), 1)
+            skill_users[r['skill']][uid] = max(skill_users[r['skill']].get(uid, 0), level)
         except:
             pass
 
-    for skill, entries in skill_users.items():
-        # for each pair increment 'skill' by product of levels (captures stronger overlap)
+    for members in skill_users.values():
+        # Each user contributes their best level once per skill, avoiding self-loops.
+        entries = list(members.items())
         for i in range(len(entries)):
             for j in range(i+1, len(entries)):
                 u, lu = entries[i]
@@ -53,15 +59,19 @@ def build_user_graph(users_df, user_skills_df, participation_df, events_df=None)
                     G.add_edge(u, v, collab=0, skill=weight, domain=0, feedback=0)
 
     # 3) domain/event overlap (optional): if events_df provided
-    if events_df is not None and 'event_id' in events_df.columns:
+    if events_df is not None and 'event_id' in participation_df.columns:
         # build user -> set of domains they participated in (from participation -> events)
         event_map = {}
         for _, ev in events_df.iterrows():
-            event_map[int(ev['event_id'])] = ev.get('domain', ev.get('event_type', None))
+            domain = ev.get('domain', ev.get('event_type', None))
+            if notna(domain):
+                event_map[int(ev['event_id'])] = domain
         user_domains = defaultdict(set)
         for _, p in participation_df.iterrows():
-            uid = int(p[team_col])
-            eid = int(p['event_id']) if 'event_id' in p else p.get('hackathon_id', None)
+            if isna(p['event_id']):
+                continue
+            uid = int(p['user_id'])
+            eid = int(p['event_id'])
             if eid and eid in event_map:
                 user_domains[uid].add(event_map[eid])
         # connect users sharing domains

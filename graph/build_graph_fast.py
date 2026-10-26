@@ -1,7 +1,12 @@
 
 import networkx as nx
+from pandas import isna
+from graph.schema import normalize_graph_inputs
 
 def build_user_graph_fast(users_df, user_skills_df, participation_df, events_df=None):
+    user_skills_df, participation_df, events_df = normalize_graph_inputs(
+        user_skills_df, participation_df, events_df
+    )
     G = nx.Graph()
 
     # ---- Add user nodes ----
@@ -25,18 +30,22 @@ def build_user_graph_fast(users_df, user_skills_df, participation_df, events_df=
             G.add_node(f"event_{eid}")
 
     # User → Event edges
-    for _, row in participation_df.iterrows():
-        uid = int(row["profile_id"])
-        eid = int(row["event_id"])
-        G.add_edge(f"user_{uid}", f"event_{eid}", weight=2.0)
+    if "event_id" in participation_df.columns:
+        for _, row in participation_df.iterrows():
+            if isna(row["event_id"]):
+                continue
+            uid = int(row["user_id"])
+            eid = int(row["event_id"])
+            G.add_edge(f"user_{uid}", f"event_{eid}", weight=2.0)
 
     # ---- Add domain nodes ----
     if events_df is not None and "domain" in events_df.columns:
-        for dom in events_df["domain"].unique():
+        domain_events = events_df.dropna(subset=["domain"])
+        for dom in domain_events["domain"].unique():
             G.add_node(f"domain_{dom}")
 
         # Event → Domain edges
-        for _, row in events_df.iterrows():
+        for _, row in domain_events.iterrows():
             eid = int(row["event_id"])
             dom = row["domain"]
             G.add_edge(f"event_{eid}", f"domain_{dom}", weight=1.0)
